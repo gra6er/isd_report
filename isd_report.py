@@ -8,11 +8,10 @@ jira_host = os.getenv('JIRA_URL')
 jira_user = os.getenv('JIRA_USER')
 jira_password = os.getenv('JIRA_PASSWORD')
 
-
 jira = JIRA(jira_host, basic_auth=(jira_user, jira_password))
 
-timepoint_from = '2019-12-25 10:00'
-timepoint_to = '2020-02-01'
+timepoint_from = os.getenv('TIMEPOINT_FROM')
+timepoint_to = os.getenv('TIMEPOINT_TO')
 
 issues = jira.search_issues(f'project = ISD and type = Инцидент and priority = Безотлагательный and created >= \'{timepoint_from}\' and created < \'{timepoint_to}\'')
 
