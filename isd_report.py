@@ -4,7 +4,7 @@ import os
 
 pp = pprint.PrettyPrinter(width=41, compact=True)
 
-jira_host = os.getenv('JIRA_HOST')
+jira_host = os.getenv('JIRA_URL')
 jira_user = os.getenv('JIRA_USER')
 jira_password = os.getenv('JIRA_PASSWORD')
 
