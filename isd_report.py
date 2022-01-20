@@ -24,6 +24,24 @@ def print_issue(issue):
         print('Время на решение (мс): ')
 
 
+def get_JQL(project = 'ISD', custom = None, assignee = None, created_from = None, created_to = None, issue_type = None, status = None):
+    jql = 'project = ' + project
+    if custom is not None:
+        jql += f' and {custom}'
+    if status is not None:
+        jql += f' and status in({status})'
+    if assignee is not None:
+        jql += f' and assignee in({assignee})'
+    if created_from is not None:
+        jql += f' and created >= "{created_from}"'
+    if created_to is not None:
+        jql += f' and created <= "{created_to}"'
+    if issue_type is not None:
+        jql += f' and issuetype in({issue_type})'
+
+    return jql
+
+
 def parameter_1(jira, timepoint_from, timepoint_to):
     """
     Count 1st reporting parameter: Share of timely processed requests
@@ -60,9 +78,9 @@ def parameter_2(jira, timepoint_from, timepoint_to):
 
     # and type = Инцидент and priority = Безотлагательный
 
-    issues = jira.search_issues(f'project = ISD and "Время на решение" != breached() and created >= \'{timepoint_from}\' and created < \'{timepoint_to}\'', maxResults=1)
+    issues = jira.search_issues(get_JQL(custom = '"Время на решение" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='Инцидент', status='Закрыта'), maxResults=1)
     not_breached_count = issues.total
-    issues = jira.search_issues(f'project = ISD and created >= \'{timepoint_from}\' and created < \'{timepoint_to}\'', maxResults=1)
+    issues = jira.search_issues(get_JQL(created_from=timepoint_from, created_to=timepoint_to, issue_type='Инцидент', status='Закрыта'), maxResults=1)
     all_count = issues.total
 
     print(f'2. not_breached: {not_breached_count}  all: {all_count}')
@@ -84,7 +102,7 @@ def parameter_7(jira, timepoint_from, timepoint_to):
     print(len(issues))
 
     # TODO Узнать как это обрабатывать
-    # ---------------------------------
+    # --------------------------------
 
     total = issues.total
     total_10125 = total
@@ -112,7 +130,7 @@ def parameter_7(jira, timepoint_from, timepoint_to):
 
     millis_mean_10125 = millis_sum_10125 / total_10125
     millis_mean_10401 = millis_sum_10401 / total_10401
-    return (millis_mean_10125, millis_sum_10401)
+    return (millis_mean_10125 / 1000, millis_sum_10401 / 1000)
 
 
 jira_host = os.getenv('JIRA_URL')
@@ -125,6 +143,7 @@ timepoint_from = os.getenv('TIMEPOINT_FROM')
 timepoint_to = os.getenv('TIMEPOINT_TO')
 
 # print(parameter_1(jira, timepoint_from, timepoint_to))
-# print(parameter_2(jira, timepoint_from, timepoint_to))
-print(parameter_7(jira, timepoint_from, timepoint_to))
+print(parameter_2(jira, timepoint_from, timepoint_to))
+# print(parameter_7(jira, timepoint_from, timepoint_to))
 
+# print(get_JQL(custom = '"Время на решение" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='Инцидент'))
