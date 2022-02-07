@@ -1,19 +1,12 @@
 from jira import JIRA
 import pprint
-import os
-from datetime import datetime
-import time
 import pandas as pd
+import argparse
+from dynaconf import Dynaconf
+import matplotlib.pyplot as plt
 
 
 pp = pprint.PrettyPrinter(width=41, compact=True)
-
-isd_members = [
-    'msimonyants',
-    'skorotkih',
-    'ruteshev',
-    'ialdoshin'
-]
 
 def print_issue(issue):
     """
@@ -142,9 +135,12 @@ def parameter_7(jira, timepoint_from, timepoint_to):
     """
     # start_time = datetime.now()
 
+    isd_members = settings.isd_members
+
     df = pd.DataFrame(columns=["Инцидент (откл.)", "Инцидент (реш.)",  "Изменение", "Обслуживание"], index=isd_members)
 
     for member in isd_members:
+        # TODO refactor this
 
         # Fill Инцидент (откл.) column
         incident_issues_10125 = jira.search_issues(get_JQL(created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='Инцидент', assignee=member) \
@@ -175,28 +171,62 @@ def parameter_7(jira, timepoint_from, timepoint_to):
         service_avg_time  = avg_customfield_time(service_issues, 'customfield_10125')
 
         df.loc[member, 'Обслуживание'] = service_avg_time / 60000
-
+        
     # print(f'\n time for 7 param: {datetime.now() - start_time}')
 
+    df = df.astype(float).round(2)
     return df
 
+def pie_visualize_parameter(amount):
+    vals = [amount, 100 - amount]
+    labels = [str(round(x, 2)) for x in vals]
+    colors = ['green', 'red']
+    explode = (0.1, 0)
 
-jira_host = os.getenv('JIRA_URL')
-jira_user = os.getenv('JIRA_USER')
-jira_password = os.getenv('JIRA_PASSWORD')
+    fig, ax = plt.subplots()
+    ax.pie(vals, labels=labels, colors=colors, explode=explode, startangle=90)
+    fig.savefig('my_plot.png')
 
-jira = JIRA(jira_host, basic_auth=(jira_user, jira_password))
+def visualize_parameter7(df):
+    html = df.to_html()
 
-timepoint_from = os.getenv('TIMEPOINT_FROM')
-timepoint_to = os.getenv('TIMEPOINT_TO')
+    #write html to file
+    text_file = open("index.html", "w")
+    text_file.write(html)
+    text_file.close()
+
+parser = argparse.ArgumentParser(description='Утилита создания отчётов')
+parser.add_argument('-c', '--config', required=True, type=argparse.FileType())
+args = parser.parse_args()
+
+settings = Dynaconf(
+    envvar_prefix="DYNACONF",
+    settings_files=[args.config.name],
+)
+
+jira_url = settings.jira.url
+jira_user = settings.jira.username
+jira_password = settings.jira.password
+
+jira = JIRA(jira_url, basic_auth=(jira_user, jira_password))
+
+timepoint_from = settings.timeframe.start
+timepoint_to = settings.timeframe.end
 
 print("1. Доля своевременно обработанных запросов (в %):")
-print(parameter_1(jira, timepoint_from, timepoint_to))
+p1 = parameter_1(jira, timepoint_from, timepoint_to)
+print(p1)
+pie_visualize_parameter(p1)
 
-print("\n2. Доля решенных обработанных запросов (в %):")
-print(parameter_2(jira, timepoint_from, timepoint_to))
+print("\n2. Доля своевременно решенных запросов (в %):")
+p2 = parameter_2(jira, timepoint_from, timepoint_to)
+print(p2)
+pie_visualize_parameter(p2)
 
 print("\n7. Среднее время обработки запросов различных типов заявок (в минутах):")
-print(parameter_7(jira, timepoint_from, timepoint_to))
+p7 = parameter_7(jira, timepoint_from, timepoint_to)
+print(p7)
+visualize_parameter7(p7)
+
 
 # print(get_JQL(custom = '"Время до первого отклика" != breached()', created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='"Запрос на обслуживание с заверениями", Изменение', assignee=", ".join(isd_members)))

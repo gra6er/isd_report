@@ -1,0 +1,17 @@
+---
+jira:
+  url: http<s>://<jira's IP or hostname>/
+  username: <jira's user>
+  password: <jira's password>  
+
+timeframe:
+  start: 2019-12-25 10:00
+  end: 2021-02-01
+
+isd_members:
+  - msimonyants
+  - skorotkih
+  - ruteshev
+  - ialdoshin
+
+parameter1:

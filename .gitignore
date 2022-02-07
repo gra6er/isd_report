@@ -1,1 +1,5 @@
-isd_report.bat
+*.bat
+*.yaml
+!settings_example.yaml
+*.png
+*.html
