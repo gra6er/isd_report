@@ -14,4 +14,10 @@ isd_members:
   - ruteshev
   - ialdoshin
 
-parameter1:
+parameters:
+
+  ReportParameter1:
+
+#  ReportParameter2:
+
+#  ReportParameter7:

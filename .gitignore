@@ -1,6 +1,1 @@
-*.bat
-*.yaml
-!settings_example.yaml
-*.png
-*.html
-*.pdf
+settings.yaml
