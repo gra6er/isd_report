@@ -3,6 +3,7 @@ from dynaconf import Dynaconf
 import argparse
 from jira import JIRA
 import sys
+import pandas as pd
 
 
 class Report:
@@ -77,6 +78,10 @@ class ReportBuilder:
 
 class ReportParameter(ABC):
 
+    def __init__(self, config):
+        self.value = None
+        self.config = config
+
     @abstractmethod
     def count(self):
         pass
@@ -101,17 +106,39 @@ class ReportParameter(ABC):
 
     def get_none_incident_issues_JQL(self, timepoint_from, timepoint_to, breached = None):
         if breached == False: 
-            return self.get_JQL(custom = '"Время до первого отклика" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание с заверениями", Изменение', status='Закрыта')
+            return self.get_JQL(custom = '"Время до первого отклика" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание", Изменение', status='Закрыта')
         else:
-            return self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание с заверениями", Изменение', status='Закрыта')
+            return self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание", Изменение', status='Закрыта')
+
+    def get_incident_issues_JQL(self, timepoint_from, timepoint_to, breached = None):
+        if breached == False: 
+            return self.get_JQL(custom = '"Время на решение" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='Инцидент', status='Закрыта')
+        else:
+            return self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, issue_type='Инцидент', status='Закрыта')
 
 
+    def get_customfield_time(self, issue, customfield):
+        # TODO write IndexError handling by finding reaction time in issue history
+        try:
+            time = issue.raw['fields'][customfield]['completedCycles'][0]['elapsedTime']['millis']
+            return time
+        except IndexError:
+            raise
+
+    def avg_customfield_time(self, issues, customfield):
+        sum = 0
+        for issue in issues:
+            try:
+                sum += self.get_customfield_time(issue, customfield)
+            except:
+                issues.total -= 1
+
+        return sum / issues.total
 
 class ReportParameter1(ReportParameter):
 
     def __init__(self, config):
-        self.value = None
-        self.config = config
+        ReportParameter.__init__(self, config)
         
 
     def count(self):
@@ -130,25 +157,75 @@ class ReportParameter1(ReportParameter):
         return str(self.value)
 
 
-
 class ReportParameter2(ReportParameter):
 
     def __init__(self, config):
-        self.value = None
-        self.config = config
+        ReportParameter.__init__(self, config)
 
     def count(self):
-        pass
+        jira = self.config.sd
+        timepoint_from = self.config.settings.timeframe.start
+        timepoint_to = self.config.settings.timeframe.end
+
+        issues = jira.search_issues(self.get_incident_issues_JQL(timepoint_from, timepoint_to, breached=False), maxResults=1)
+        not_breached_count = issues.total
+        issues = jira.search_issues(self.get_incident_issues_JQL(timepoint_from, timepoint_to), maxResults=1)
+        all_count = issues.total
+
+        self.value = not_breached_count / all_count * 100
+
+    def __str__(self):
+        return str(self.value)
 
 
 class ReportParameter7(ReportParameter):
 
     def __init__(self, config):
-        self.value = None
-        self.config = config
+        ReportParameter.__init__(self, config)
 
     def count(self):
-        pass
+        isd_members = self.config.settings.isd_members
+        jira = self.config.sd
+        timepoint_from = self.config.settings.timeframe.start
+        timepoint_to = self.config.settings.timeframe.end
+
+        df = pd.DataFrame(columns=["Инцидент (откл.)", "Инцидент (реш.)",  "Изменение", "Обслуживание"], index=isd_members)
+
+        for member in isd_members:
+            # TODO refactor this
+
+            # Fill Инцидент (откл.) column
+            incident_issues_10125 = jira.search_issues(self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='Инцидент', assignee=member) \
+                , maxResults=False, fields=['customfield_10125'])
+
+            incident_avg_time_10125  = self.avg_customfield_time(incident_issues_10125, 'customfield_10125')
+            df.loc[member, 'Инцидент (откл.)'] = incident_avg_time_10125 / 60000
+
+            # Fill Инцидент (реш.) column
+            incident_issues_10401 = jira.search_issues(self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='Инцидент', assignee=member) \
+                , maxResults=False, fields=['customfield_10401'])
+
+            incident_avg_time_10401  = self.avg_customfield_time(incident_issues_10401, 'customfield_10401')
+            df.loc[member, 'Инцидент (реш.)'] = incident_avg_time_10401 / 60000
+
+            # Fill Изменение column
+            change_issues = jira.search_issues(self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='Изменение', assignee=member) \
+                , maxResults=False, fields=['customfield_10125'])
+
+            change_avg_time  = self.avg_customfield_time(change_issues, 'customfield_10125')
+
+            df.loc[member, 'Изменение'] = change_avg_time / 60000
+
+            # Fill Обслуживание column
+            service_issues = jira.search_issues(self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, status='Закрыта', issue_type='"Запрос на обслуживание"', assignee=member) \
+                , maxResults=False, fields=['customfield_10125'])
+
+            service_avg_time  = self.avg_customfield_time(service_issues, 'customfield_10125')
+
+            df.loc[member, 'Обслуживание'] = service_avg_time / 60000
+
+        df = df.astype(float).round(2)
+        self.value = df
 
 
 class View(ABC):
@@ -173,4 +250,8 @@ class PDFView(View):
 if __name__ == '__main__':
 
     rb = ReportBuilder()
-    print(rb.report.params[0].value)
+    for param in rb.report.params:
+        print(str(param.value) + '\n')
+
+    # rp1 = ReportParameter1('config')
+    # print(rp1.get_none_incident_issues_JQL('2019-12-25 10:00', '2021-02-01', breached=False))
