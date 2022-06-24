@@ -6,6 +6,7 @@ import sys
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 
 class Report:
@@ -45,13 +46,15 @@ class Report:
         for param in self.params:
             param.count()
 
-    def generate_rp_output(self):
+    def gen_rp_output(self):
         for param in self.params:
             param.generate_output()
 
-    def create_view(self):
+    def gen_rp_view(self):
+        for param in self.params:
+            param.init_view()
+            param.view.gen_view()
         
-        pass 
 
 
 class ReportConfig:
@@ -84,7 +87,8 @@ class ReportBuilder:
         self.report.create_report_instance_folder()
         self.report.init_report_parameters()
         self.report.count_parameters()
-        self.report.generate_rp_output()
+        self.report.gen_rp_output()
+        self.report.gen_rp_view()
 
 
     def parse_args(self):
@@ -116,10 +120,12 @@ class ReportParameter(ABC):
         self.value = None
         self.rp_type = rp_type
         self.config = config
-        self.header = ''
-        self.description = ''
-        self.caption = ''
-        self.comment = ''
+        self.rp_info = {
+            'header': '',
+            'description': '',
+            'caption': '',
+            'comment': '',
+        }
         self.report_dir_path = report_dir_path
         self.create_parameter_folder()
 
@@ -141,8 +147,25 @@ class ReportParameter(ABC):
             self.parameter_value_path = Path(self.parameter_dir_path, 'value.txt')
             with self.parameter_value_path.open('w', encoding='utf-8', ) as f:
                 f.write(str(self.value))
+        elif self.rp_type == 'table':
+            print(f"[INFO]  Generating output for: {self.__class__.__name__}")
+            self.parameter_value_path = Path(self.parameter_dir_path, 'value.csv')
+            # TODO create encoding fields to RP class
+            self.value.to_csv(self.parameter_value_path, sep=';', encoding='cp1251')
+        else:
+            print(f"[ERROR] Unknown report parameter type for: {self.__class__.__name__}. Must be value or table.")            
 
-        pass
+
+    def init_view(self):
+        template_dir_path = self.config.settings.template_dir_path or Path("./templates")
+        if self.rp_type == 'value':
+            self.view = ValueView(self.parameter_dir_path, template_dir_path, self.rp_info, self.value)
+        elif self.rp_type == 'table':
+            self.view = TableView(self.parameter_dir_path, template_dir_path, self.rp_info, self.value)
+        else:
+            print(f"[ERROR] Unknown report parameter type for: {self.__class__.__name__}. Must be value or table.")            
+
+
 
     # TODO join all parameters to map 
     def get_JQL(self, project = 'ISD', custom = None, assignee = None, created_from = None, created_to = None, issue_type = None, status = None):
@@ -197,10 +220,12 @@ class ReportParameter1(ReportParameter):
 
     def __init__(self, config, report_dir_path, ):
         ReportParameter.__init__(self, config, report_dir_path, "value")
-        self.header = self.config.settings.parameters.ReportParameter1.header
-        self.description = self.config.settings.parameters.ReportParameter1.description
-        self.caption = self.config.settings.parameters.ReportParameter1.caption
-        self.comment = self.config.settings.parameters.ReportParameter1.comment
+        self.rp_info = {
+            'header': self.config.settings.parameters.ReportParameter1.header,
+            'description': self.config.settings.parameters.ReportParameter1.description,
+            'caption': self.config.settings.parameters.ReportParameter1.caption,
+            'comment': self.config.settings.parameters.ReportParameter1.comment,
+        }
         
 
     def count(self):
@@ -223,10 +248,12 @@ class ReportParameter2(ReportParameter):
 
     def __init__(self, config, report_dir_path):
         ReportParameter.__init__(self, config, report_dir_path, "value")
-        self.header = self.config.settings.parameters.ReportParameter2.header
-        self.description = self.config.settings.parameters.ReportParameter2.description
-        self.caption = self.config.settings.parameters.ReportParameter2.caption
-        self.comment = self.config.settings.parameters.ReportParameter2.comment
+        self.rp_info = {
+            'header': self.config.settings.parameters.ReportParameter2.header,
+            'description': self.config.settings.parameters.ReportParameter2.description,
+            'caption': self.config.settings.parameters.ReportParameter2.caption,
+            'comment': self.config.settings.parameters.ReportParameter2.comment,
+        }
         
 
     def count(self):
@@ -249,10 +276,12 @@ class ReportParameter7(ReportParameter):
 
     def __init__(self, config, report_dir_path):
         ReportParameter.__init__(self, config, report_dir_path, "table")
-        self.header = self.config.settings.parameters.ReportParameter7.header
-        self.description = self.config.settings.parameters.ReportParameter7.description
-        self.caption = self.config.settings.parameters.ReportParameter7.caption
-        self.comment = self.config.settings.parameters.ReportParameter7.comment
+        self.rp_info = {
+            'header': self.config.settings.parameters.ReportParameter7.header,
+            'description': self.config.settings.parameters.ReportParameter7.description,
+            'caption': self.config.settings.parameters.ReportParameter7.caption,
+            'comment': self.config.settings.parameters.ReportParameter7.comment,
+        }
 
     def count(self):
         isd_members = self.config.settings.isd_members
@@ -301,26 +330,68 @@ class ReportParameter7(ReportParameter):
 
 class View(ABC):
 
+    def __init__(self, parameter_dir_path, template_dir_path, rp_info, value):
+        self.parameter_dir_path = parameter_dir_path
+        self.rp_info = rp_info
+        self.value = value
+        self.template_dir_path = template_dir_path
+        self.create_parts_folder()
+
     @abstractmethod
     def gen_view(self):
         pass
 
+    def create_parts_folder(self):
+        self.part_dir_path = Path(self.parameter_dir_path, 'parts')
+        self.part_dir_path.mkdir(parents=True, exist_ok=True)
+
 
 class ValueView(View):
 
+    def __init__(self, parameter_dir_path, rp_info, value): 
+        View.__init__(self, parameter_dir_path, rp_info, value)
+
+
     def gen_view(self):
-        pass
+        self.create_img_folder()
+        self.gen_pie_img(self.value, Path(self.img_dir_path, 'pie.png'))
+
+
+    def create_img_folder(self):
+        self.img_dir_path = Path(self.part_dir_path, 'img')
+        self.img_dir_path.mkdir(parents=True, exist_ok=True)
+
+
+    def gen_pie_img(self, amount, filename):
+        vals = [amount, 100 - amount]
+        labels = [str(round(x, 2)) for x in vals]
+        colors = ['green', 'red']
+        explode = (0.1, 0)
+
+        fig, ax = plt.subplots()
+        ax.pie(vals, labels=labels, colors=colors, explode=explode, startangle=90)
+        fig.savefig(filename)
+
 
 class TableView(View):
 
-    def gen_view(self):
-        pass
-
-
-class PDFView(View):
+    def __init__(self, parameter_dir_path, rp_info, value): 
+        View.__init__(self, parameter_dir_path, rp_info, value)
 
     def gen_view(self):
-        pass
+        self.create_html_folder()
+        self.gen_html_table()
+    
+    def gen_html_table(self):
+        html = self.value.to_html()
+        self.html_table_path = Path(self.html_dir_path, "table.html")
+        with self.html_table_path.open('w', encoding='utf-8', ) as f:
+                f.write(html)
+
+    def create_html_folder(self):
+        self.html_dir_path = Path(self.part_dir_path, 'html')
+        self.html_dir_path.mkdir(parents=True, exist_ok=True)
+
 
 
 if __name__ == '__main__':
