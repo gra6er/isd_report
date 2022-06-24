@@ -4,18 +4,21 @@ import argparse
 from jira import JIRA
 import sys
 import pandas as pd
+from pathlib import Path
+from datetime import datetime
 
 
 class Report:
     def __init__ (self, name, config):
-        self.name = name
-        self.timepoint_from = config.settings.timeframe.start
-        self.timepoint_to = config.settings.timeframe.end
+        self.name = name or f"report_{datetime.now().strftime('%Y_%m_%d__%H-%M-%S')}"
+        self.config = config
+        self.report_dir_path = ''
+        self.timepoint_from = self.config.settings.timeframe.start
+        self.timepoint_to = self.config.settings.timeframe.end
 
         self.params = []
 
         self.visual = None
-        self.config = config
 
     def init_report_parameters(self):
         """
@@ -23,19 +26,39 @@ class Report:
         """
         # TODO add ReportParams validation
         for report_parameter in self.config.settings.parameters.keys():
-            self.params.append(getattr(sys.modules[__name__], report_parameter)(self.config)) 
+            self.params.append(getattr(sys.modules[__name__], report_parameter)(self.config, self.report_dir_path)) 
+
+    def create_report_instance_folder(self):
+        report_folder = Path(self.config.settings.reports_dir.path, 'reports/')
+        report_folder = report_folder / Path(self.name)
+
+        if not report_folder.exists():
+            print(f"[INFO]  Creating report instance folder: {self.name}")
+            report_folder.mkdir(parents=True, exist_ok=True) 
+        else:
+            print(f"[ERROR] Report instance folder witn name {self.name} already exists")
+            exit()
+
+        self.report_dir_path = report_folder
 
     def count_parameters(self):
         for param in self.params:
             param.count()
+
+    def generate_rp_output(self):
+        for param in self.params:
+            param.generate_output()
+
+    def create_view(self):
         
-        pass  
+        pass 
 
 
 class ReportConfig:
     def __init__ (self, config_path):
-        self.path = config_path
+        self.config_path = config_path
         self.settings = Dynaconf(envvar_prefix="DYNACONF", settings_files=config_path)
+        self.reports_dir = self.settings.reports_dir.path
         # TODO validate settings
         self.sd = self.init_sd()
     
@@ -52,13 +75,16 @@ class ReportConfig:
 
 
 class ReportBuilder:
-    def __init__(self, name = "report"):
+    def __init__(self, name = f"report_{datetime.now().strftime('%Y_%m_%d__%H-%M-%S')}"):
         self.args = self.parse_args()
-        self.config = ReportConfig(self.args.config.name)
         # TODO add rewriting config params by args params if exist
-        self.report = Report(name=name, config=self.config)
+        self.report = Report(name=name, config=ReportConfig(self.args.config.name))
+        self.config = self.report.config
+        self.check_reports_folder()
+        self.report.create_report_instance_folder()
         self.report.init_report_parameters()
         self.report.count_parameters()
+        self.report.generate_rp_output()
 
 
     def parse_args(self):
@@ -70,20 +96,52 @@ class ReportBuilder:
         args = parser.parse_args()
         return args
 
-    def check_folders():
+    def check_reports_folder(self):
         """
-        Checking system foldres for existing
+        Check reports folder exists
+        If not exists - create it 
         """
-        pass
+        reports_path = Path(self.config.settings.reports_dir.path)
+        reports_path = reports_path / Path('reports/')
+
+        if not reports_path.exists():
+            print("[INFO]  Creating reports folder")
+            reports_path.mkdir(parents=True, exist_ok=True) 
+        else:
+            print("[INFO]  Reports folder exists")
 
 class ReportParameter(ABC):
 
-    def __init__(self, config):
+    def __init__(self, config, report_dir_path, rp_type):
         self.value = None
+        self.rp_type = rp_type
         self.config = config
+        self.header = ''
+        self.description = ''
+        self.caption = ''
+        self.comment = ''
+        self.report_dir_path = report_dir_path
+        self.create_parameter_folder()
 
     @abstractmethod
     def count(self):
+        pass
+
+    def create_parameter_folder(self):
+        parameter_folder = Path(self.report_dir_path, self.__class__.__name__)
+        parameter_folder.mkdir(parents=True, exist_ok=True)
+        self.parameter_dir_path = parameter_folder
+        print(f"[INFO]  Creating parameter folder for: {self.__class__.__name__}")
+        pass
+
+    def generate_output(self):
+        
+        if self.rp_type == 'value':
+            print(f"[INFO]  Generating output for: {self.__class__.__name__}")
+            self.parameter_value_path = Path(self.parameter_dir_path, 'value.txt')
+            with self.parameter_value_path.open('w', encoding='utf-8', ) as f:
+                f.write(str(self.value))
+
         pass
 
     # TODO join all parameters to map 
@@ -137,8 +195,12 @@ class ReportParameter(ABC):
 
 class ReportParameter1(ReportParameter):
 
-    def __init__(self, config):
-        ReportParameter.__init__(self, config)
+    def __init__(self, config, report_dir_path, ):
+        ReportParameter.__init__(self, config, report_dir_path, "value")
+        self.header = self.config.settings.parameters.ReportParameter1.header
+        self.description = self.config.settings.parameters.ReportParameter1.description
+        self.caption = self.config.settings.parameters.ReportParameter1.caption
+        self.comment = self.config.settings.parameters.ReportParameter1.comment
         
 
     def count(self):
@@ -159,8 +221,13 @@ class ReportParameter1(ReportParameter):
 
 class ReportParameter2(ReportParameter):
 
-    def __init__(self, config):
-        ReportParameter.__init__(self, config)
+    def __init__(self, config, report_dir_path):
+        ReportParameter.__init__(self, config, report_dir_path, "value")
+        self.header = self.config.settings.parameters.ReportParameter2.header
+        self.description = self.config.settings.parameters.ReportParameter2.description
+        self.caption = self.config.settings.parameters.ReportParameter2.caption
+        self.comment = self.config.settings.parameters.ReportParameter2.comment
+        
 
     def count(self):
         jira = self.config.sd
@@ -180,8 +247,12 @@ class ReportParameter2(ReportParameter):
 
 class ReportParameter7(ReportParameter):
 
-    def __init__(self, config):
-        ReportParameter.__init__(self, config)
+    def __init__(self, config, report_dir_path):
+        ReportParameter.__init__(self, config, report_dir_path, "table")
+        self.header = self.config.settings.parameters.ReportParameter7.header
+        self.description = self.config.settings.parameters.ReportParameter7.description
+        self.caption = self.config.settings.parameters.ReportParameter7.caption
+        self.comment = self.config.settings.parameters.ReportParameter7.comment
 
     def count(self):
         isd_members = self.config.settings.isd_members
@@ -235,7 +306,12 @@ class View(ABC):
         pass
 
 
-class RawView(View):
+class ValueView(View):
+
+    def gen_view(self):
+        pass
+
+class TableView(View):
 
     def gen_view(self):
         pass
