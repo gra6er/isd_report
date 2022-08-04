@@ -7,6 +7,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
+from jinja2 import Template
 
 
 class Report:
@@ -19,7 +20,6 @@ class Report:
 
         self.params = []
 
-        self.visual = None
 
     def init_report_parameters(self):
         """
@@ -28,6 +28,7 @@ class Report:
         # TODO add ReportParams validation
         for report_parameter in self.config.settings.parameters.keys():
             self.params.append(getattr(sys.modules[__name__], report_parameter)(self.config, self.report_dir_path)) 
+
 
     def create_report_instance_folder(self):
         report_folder = Path(self.config.settings.reports_dir.path, 'reports/')
@@ -42,18 +43,38 @@ class Report:
 
         self.report_dir_path = report_folder
 
+
     def count_parameters(self):
         for param in self.params:
             param.count()
+
 
     def gen_rp_output(self):
         for param in self.params:
             param.generate_output()
 
+
     def gen_rp_view(self):
+        for param in self.params[1:]:
+            param.rp_info['page'] = 'new-page'
+            
         for param in self.params:
             param.init_view()
             param.view.gen_view()
+
+
+    def gen_html_report(self):
+        html = ''
+        params = [ x for x in self.report_dir_path.glob("ReportParameter*")]
+        params.sort()
+        for param in params:
+            view_file = open(param / Path("view.html"), "r")
+            html += view_file.read()
+            
+        template_dir_path = self.config.settings.template_dir
+        template = Template(open(Path(template_dir_path, 'report.html.j2'), 'r', encoding='utf-8').read())
+        with open(self.report_dir_path / Path("report.html"), "w", encoding='utf-8') as output_html:
+            output_html.write(template.render({'content': html}))
         
 
 
@@ -89,6 +110,7 @@ class ReportBuilder:
         self.report.count_parameters()
         self.report.gen_rp_output()
         self.report.gen_rp_view()
+        self.report.gen_html_report()
 
 
     def parse_args(self):
@@ -99,6 +121,7 @@ class ReportBuilder:
         parser.add_argument('-c', '--config', required=True, type=argparse.FileType())
         args = parser.parse_args()
         return args
+
 
     def check_reports_folder(self):
         """
@@ -114,13 +137,14 @@ class ReportBuilder:
         else:
             print("[INFO]  Reports folder exists")
 
-class ReportParameter(ABC):
 
+class ReportParameter(ABC):
     def __init__(self, config, report_dir_path, rp_type):
         self.value = None
         self.rp_type = rp_type
         self.config = config
         self.rp_info = {
+            'page': '',
             'header': '',
             'description': '',
             'caption': '',
@@ -129,9 +153,11 @@ class ReportParameter(ABC):
         self.report_dir_path = report_dir_path
         self.create_parameter_folder()
 
+
     @abstractmethod
     def count(self):
         pass
+
 
     def create_parameter_folder(self):
         parameter_folder = Path(self.report_dir_path, self.__class__.__name__)
@@ -140,8 +166,8 @@ class ReportParameter(ABC):
         print(f"[INFO]  Creating parameter folder for: {self.__class__.__name__}")
         pass
 
+
     def generate_output(self):
-        
         if self.rp_type == 'value':
             print(f"[INFO]  Generating output for: {self.__class__.__name__}")
             self.parameter_value_path = Path(self.parameter_dir_path, 'value.txt')
@@ -157,7 +183,7 @@ class ReportParameter(ABC):
 
 
     def init_view(self):
-        template_dir_path = self.config.settings.template_dir_path or Path("./templates")
+        template_dir_path = self.config.settings.template_dir
         if self.rp_type == 'value':
             self.view = ValueView(self.parameter_dir_path, template_dir_path, self.rp_info, self.value)
         elif self.rp_type == 'table':
@@ -166,16 +192,15 @@ class ReportParameter(ABC):
             print(f"[ERROR] Unknown report parameter type for: {self.__class__.__name__}. Must be value or table.")            
 
 
-
     # TODO join all parameters to map 
-    def get_JQL(self, project = 'ISD', custom = None, assignee = None, created_from = None, created_to = None, issue_type = None, status = None):
+    def get_JQL(self, project = '"Внутренний сервис ИТ"', custom = None, assignee = None, created_from = None, created_to = None, issue_type = None, status = None):
         jql = 'project = ' + project
         if custom is not None:
             jql += f' and {custom}'
         if status is not None:
             jql += f' and status in({status})'
         if assignee is not None:
-            jql += f' and assignee in({assignee})'
+            jql += f' and assignee in("{assignee}")'
         if created_from is not None:
             jql += f' and created >= "{created_from}"'
         if created_to is not None:
@@ -185,11 +210,13 @@ class ReportParameter(ABC):
 
         return jql
 
+
     def get_none_incident_issues_JQL(self, timepoint_from, timepoint_to, breached = None):
         if breached == False: 
             return self.get_JQL(custom = '"Время до первого отклика" != breached()', created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание", Изменение', status='Закрыта')
         else:
             return self.get_JQL(created_from=timepoint_from, created_to=timepoint_to, issue_type='"Запрос на обслуживание", Изменение', status='Закрыта')
+
 
     def get_incident_issues_JQL(self, timepoint_from, timepoint_to, breached = None):
         if breached == False: 
@@ -206,6 +233,7 @@ class ReportParameter(ABC):
         except IndexError:
             raise
 
+
     def avg_customfield_time(self, issues, customfield):
         sum = 0
         for issue in issues:
@@ -216,11 +244,16 @@ class ReportParameter(ABC):
 
         return sum / issues.total
 
-class ReportParameter1(ReportParameter):
 
+    def __str__(self):
+        return str(self.value)
+
+
+class ReportParameter1(ReportParameter):
     def __init__(self, config, report_dir_path, ):
         ReportParameter.__init__(self, config, report_dir_path, "value")
         self.rp_info = {
+            'page': '',
             'header': self.config.settings.parameters.ReportParameter1.header,
             'description': self.config.settings.parameters.ReportParameter1.description,
             'caption': self.config.settings.parameters.ReportParameter1.caption,
@@ -240,15 +273,12 @@ class ReportParameter1(ReportParameter):
 
         self.value = not_breached_count / all_count * 100
 
-    def __str__(self):
-        return str(self.value)
-
 
 class ReportParameter2(ReportParameter):
-
     def __init__(self, config, report_dir_path):
         ReportParameter.__init__(self, config, report_dir_path, "value")
         self.rp_info = {
+            'page': '',
             'header': self.config.settings.parameters.ReportParameter2.header,
             'description': self.config.settings.parameters.ReportParameter2.description,
             'caption': self.config.settings.parameters.ReportParameter2.caption,
@@ -268,15 +298,12 @@ class ReportParameter2(ReportParameter):
 
         self.value = not_breached_count / all_count * 100
 
-    def __str__(self):
-        return str(self.value)
-
 
 class ReportParameter7(ReportParameter):
-
     def __init__(self, config, report_dir_path):
         ReportParameter.__init__(self, config, report_dir_path, "table")
         self.rp_info = {
+            'page': '',
             'header': self.config.settings.parameters.ReportParameter7.header,
             'description': self.config.settings.parameters.ReportParameter7.description,
             'caption': self.config.settings.parameters.ReportParameter7.caption,
@@ -346,15 +373,27 @@ class View(ABC):
         self.part_dir_path.mkdir(parents=True, exist_ok=True)
 
 
+    def gen_html(self, tmpl_file, output_file, context):
+        template = Template(open(tmpl_file, 'r', encoding='utf-8').read())
+        with open(output_file, "w", encoding='utf-8') as output_html:
+            output_html.write(template.render(context))
+        
+
+
 class ValueView(View):
 
-    def __init__(self, parameter_dir_path, rp_info, value): 
-        View.__init__(self, parameter_dir_path, rp_info, value)
+    def __init__(self, parameter_dir_path, template_dir_path, rp_info, value): 
+        View.__init__(self, parameter_dir_path, template_dir_path, rp_info, value)
+        self.template = Path(template_dir_path, 'pie.html.j2')
+        self.html_file = Path(parameter_dir_path, 'view.html')
 
 
     def gen_view(self):
         self.create_img_folder()
-        self.gen_pie_img(self.value, Path(self.img_dir_path, 'pie.png'))
+        self.img_path = Path(self.img_dir_path, 'pie.png')
+        self.gen_pie_img(self.value, self.img_path)
+        self.rp_info['img_path'] = str(self.img_path.resolve()) 
+        self.gen_html(self.template, self.html_file, self.rp_info)
 
 
     def create_img_folder(self):
@@ -375,12 +414,16 @@ class ValueView(View):
 
 class TableView(View):
 
-    def __init__(self, parameter_dir_path, rp_info, value): 
-        View.__init__(self, parameter_dir_path, rp_info, value)
+    def __init__(self, parameter_dir_path, template_dir_path, rp_info, value): 
+        View.__init__(self, parameter_dir_path, template_dir_path, rp_info, value)
+        self.template = Path(template_dir_path, 'table.html.j2')
+        self.html_file = Path(parameter_dir_path, 'view.html')
 
     def gen_view(self):
         self.create_html_folder()
         self.gen_html_table()
+        self.rp_info['table'] = open(self.html_table_path, 'r').read()
+        self.gen_html(self.template, self.html_file, self.rp_info)
     
     def gen_html_table(self):
         html = self.value.to_html()

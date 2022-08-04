@@ -4,20 +4,38 @@ jira:
   username: <jira's user>
   password: <jira's password>  
 
+reports_dir:
+  path: '.'
+
+template_dir: './templates'
+
+
 timeframe:
-  start: 2019-12-25 10:00
-  end: 2021-02-01
+  start: 2021-07-30
+  end: 2022-07-30
 
 isd_members:
-  - msimonyants
-  - skorotkih
-  - ruteshev
-  - ialdoshin
+  - employee1@i-core.ru
+  - employee2@i-core.ru
+  - employee3@i-core.ru
+  - employee4@i-core.ru
 
 parameters:
 
   ReportParameter1:
+    header: 'Доля своевременно обработанных запросов'
+    description: 'Описание параметра'
+    caption: 'Подпись под картинкой'
+    comment: 'SLA не нарушено'
 
-#  ReportParameter2:
+  ReportParameter2:
+    header: 'Доля своевременно решенных запросов'
+    description: 'Описание параметра'
+    caption: 'Подпись под картинкой'
+    comment: 'SLA не нарушено'
 
-#  ReportParameter7:
+  ReportParameter7:
+    header: 'Среднее время обработки запросов различных типов заявок'
+    description: 'Описание параметра'
+    caption: 'Подпись под картинкой'
+    comment: 'SLA не нарушено'
