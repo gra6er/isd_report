@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from jinja2 import Template
+import pdfkit
 
 
 class Report:
@@ -75,6 +76,17 @@ class Report:
         template = Template(open(Path(template_dir_path, 'report.html.j2'), 'r', encoding='utf-8').read())
         with open(self.report_dir_path / Path("report.html"), "w", encoding='utf-8') as output_html:
             output_html.write(template.render({'content': html}))
+
+    def gen_pdf_report(self):
+
+        print(f"[INFO]  Generating PDF file ...")
+
+        options = {
+            'enable-local-file-access': True
+        }
+        input_html_file = str(self.report_dir_path / Path("report.html"))
+        output_pdf_file = str(self.report_dir_path / Path("report.pdf"))
+        pdfkit.from_file(input_html_file, output_pdf_file, verbose=True, options=options)
         
 
 
@@ -111,7 +123,7 @@ class ReportBuilder:
         self.report.gen_rp_output()
         self.report.gen_rp_view()
         self.report.gen_html_report()
-
+        self.report.gen_pdf_report()
 
     def parse_args(self):
         """
@@ -236,13 +248,16 @@ class ReportParameter(ABC):
 
     def avg_customfield_time(self, issues, customfield):
         sum = 0
-        for issue in issues:
-            try:
-                sum += self.get_customfield_time(issue, customfield)
-            except:
-                issues.total -= 1
-
-        return sum / issues.total
+        try:
+            for issue in issues:
+                try:
+                    sum += self.get_customfield_time(issue, customfield)
+                except:
+                    issues.total -= 1
+            return sum / issues.total
+        
+        except ZeroDivisionError:
+            return -1
 
 
     def __str__(self):
