@@ -77,6 +77,7 @@ class Report:
         with open(self.report_dir_path / Path("report.html"), "w", encoding='utf-8') as output_html:
             output_html.write(template.render({'content': html}))
 
+
     def gen_pdf_report(self):
 
         print(f"[INFO]  Generating PDF file ...")
